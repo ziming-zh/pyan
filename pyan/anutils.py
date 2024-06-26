@@ -34,9 +34,12 @@ def get_module_name(filename, root: str = None):
 
     # find the module root - walk up the tree and check if it contains .py files - if yes. it is the new root
     directories = [(module_path, True)]
+
     if root is None:
         while directories[0][0] != os.path.dirname(directories[0][0]):
             potential_root = os.path.dirname(directories[0][0])
+            if potential_root=='':
+                break
             is_root = any([f == "__init__.py" for f in os.listdir(potential_root)])
             directories.insert(0, (potential_root, is_root))
 
@@ -252,7 +255,11 @@ class ExecuteInInnerScope:
         inner_ns = analyzer.get_node_of_current_namespace().get_name()
         if inner_ns not in analyzer.scopes:
             analyzer.name_stack.pop()
-            raise ValueError("Unknown scope '%s'" % (inner_ns))
+            if len(analyzer.name_stack)==0:
+                print("name_stack is empty in _enter_")
+            # Log warning instead of raising an error, or handle the missing scope differently
+            print(f"Warning: Unknown scope '{inner_ns}'. Skipping...")
+            return self  # Skip further processing for this unknown scope
         analyzer.scope_stack.append(analyzer.scopes[inner_ns])
         analyzer.context_stack.append(scopename)
 
@@ -266,6 +273,8 @@ class ExecuteInInnerScope:
         analyzer.context_stack.pop()
         analyzer.scope_stack.pop()
         analyzer.name_stack.pop()
+        if len(analyzer.name_stack)==0:
+            print("name_stack is empty in __exit__")
 
         # Add a defines edge, which will mark the inner scope as defined,
         # allowing any uses to other objects from inside the lambda/listcomp/etc.

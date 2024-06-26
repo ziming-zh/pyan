@@ -41,7 +41,6 @@ from .node import Flavor, Node
 # https://docs.python.org/3/library/ast.html#abstract-grammar
 #
 
-
 class CallGraphVisitor(ast.NodeVisitor):
     """A visitor that can be walked over a Python AST, and will derive
     information about the objects in the AST and how they use each other.
@@ -80,9 +79,24 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.class_stack = []  # Nodes for class definitions currently in scope
         self.context_stack = []  # for detecting which FunctionDefs are methods
         self.last_value = None
+        
+        self.name_stack = []
+        class CustomList(list):
+            def pop(self, *args, **kwargs):
+                # Log before popping
+                print("Popping from name_stack")  # Replace this with actual logging
+                # if len(self) == 1:
+                print(self)
+                # import pdb; pdb.set_trace()
+                
+                return super().pop(*args, **kwargs)
+
+        # Assuming self.name_stack is already defined, wrap it with CustomList
+        self.name_stack = CustomList(self.name_stack)
 
         # Analyze.
         self.process()
+        
 
     def process(self):
         """Analyze the set of files, twice so that any forward-references are picked up."""
@@ -341,9 +355,15 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.scope_stack.append(self.scopes[ns])
         self.context_stack.append("Module %s" % (ns))
         self.generic_visit(node)  # visit the **children** of node
-        self.context_stack.pop()
-        self.scope_stack.pop()
-        self.name_stack.pop()
+        if self.context_stack and self.context_stack[-1] == "Module %s" % (ns):
+            self.context_stack.pop()
+        if self.scope_stack and self.scope_stack[-1] == self.scopes[ns]:
+            self.scope_stack.pop()
+
+        if self.name_stack and self.name_stack[-1] == ns:
+            self.name_stack.pop()
+            if len(self.name_stack) == 0:
+                print("name stack is empty")
         self.last_value = None
 
         if self.add_defines_edge(module_node, None):
@@ -375,6 +395,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.class_stack.append(to_node)
         self.name_stack.append(node.name)
         inner_ns = self.get_node_of_current_namespace().get_name()
+        if inner_ns == 'ao.pruning._experimental.data_scheduler.base_data_scheduler.BaseDataScheduler._enable_get_sp_call':
+            import pdb; pdb.set_trace()
         self.scope_stack.append(self.scopes[inner_ns])
         self.context_stack.append("ClassDef %s" % (node.name))
 
@@ -391,6 +413,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.context_stack.pop()
         self.scope_stack.pop()
         self.name_stack.pop()
+        
         self.class_stack.pop()
 
     def visit_FunctionDef(self, node):
@@ -427,6 +450,10 @@ class CallGraphVisitor(ast.NodeVisitor):
         #
         self.name_stack.append(node.name)
         inner_ns = self.get_node_of_current_namespace().get_name()
+        if inner_ns == 'distributed._spmd.iter_graph_module.IterGraph.node_add_user':
+            import pdb; pdb.set_trace()
+        if inner_ns == 'distributed._spmd.partial_lower._node_predicate':
+            import pdb; pdb.set_trace()
         self.scope_stack.append(self.scopes[inner_ns])
         self.context_stack.append("FunctionDef %s" % (node.name))
 
@@ -1290,10 +1317,27 @@ class CallGraphVisitor(ast.NodeVisitor):
           - n.name      = name of this namespace
           - no associated AST node.
         """
+        if not len(self.name_stack):
+            import pdb; pdb.set_trace()
         assert len(self.name_stack)  # name_stack should never be empty (always at least module name)
 
         namespace = ".".join(self.name_stack[0:-1])
         name = self.name_stack[-1]
+        if hasattr(self, "class_stack") and len(self.class_stack):
+            # import pdb; pdb.set_trace()
+            class_namespace = self.class_stack[-1].namespace #+ "." + self.class_stack[-1].name
+            # return self.get_node(namespace, name, None, flavor=Flavor.CLASS)
+            # assert namespace and class_namespace begins with the same prefix
+            if class_namespace.startswith(namespace):
+                if self.class_stack[-1].name != name: # representing a class method here
+                    class_namespace = class_namespace + "." + self.class_stack[-1].name
+                    self.name_stack.append(self.class_stack[-1].name)
+                    import pdb; pdb.set_trace()
+                return self.get_node(class_namespace, name, None, flavor=Flavor.CLASS)
+            elif namespace.startswith(class_namespace):
+                return self.get_node(namespace, name, None, flavor=Flavor.NAMESPACE)
+            else:
+                raise ValueError("Namespace and class_namespace do not match")
         return self.get_node(namespace, name, None, flavor=Flavor.NAMESPACE)
 
     ###########################################################################
@@ -1314,6 +1358,7 @@ class CallGraphVisitor(ast.NodeVisitor):
             value = sc.defs[name]
             if isinstance(value, Node):
                 self.logger.info("Get %s in %s, found in %s, value %s" % (name, self.scope_stack[-1], sc, value))
+
                 return value
             else:
                 # TODO: should always be a Node or None
