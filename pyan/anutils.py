@@ -211,15 +211,19 @@ class Scope:
     """Adaptor that makes scopes look somewhat like those from the Python 2
     compiler module, as far as Pyan's CallGraphVisitor is concerned."""
 
-    def __init__(self, table):
+    def __init__(self, table=None):
         """table: SymTable instance from symtable.symtable()"""
-        name = table.get_name()
-        if name == "top":
-            name = ""  # Pyan defines the top level as anonymous
-        self.name = name
-        self.type = table.get_type()  # useful for __repr__()
-        self.defs = {iden: None for iden in table.get_identifiers()}  # name:assigned_value
-
+        if table:
+            name = table.get_name()
+            if name == "top":
+                name = ""  # Pyan defines the top level as anonymous
+            self.name = name
+            self.type = table.get_type()  # useful for __repr__()
+            self.defs = {iden: None for iden in table.get_identifiers()}  # name:assigned_value
+        else:
+            self.name = ""
+            self.type = "unknown"
+            self.defs = {}
     def __repr__(self):
         return "<Scope: %s %s>" % (self.type, self.name)
 
@@ -254,7 +258,10 @@ class ExecuteInInnerScope:
         analyzer.name_stack.append(scopename)
         inner_ns = analyzer.get_node_of_current_namespace().get_name()
         if inner_ns not in analyzer.scopes:
-            analyzer.name_stack.pop()
+            # analyzer.name_stack.pop()
+            # setup an empty table for the unknown scope
+            analyzer.scope_stack.append(Scope())
+            analyzer.context_stack.append('')
             if len(analyzer.name_stack)==0:
                 print("name_stack is empty in _enter_")
             # Log warning instead of raising an error, or handle the missing scope differently

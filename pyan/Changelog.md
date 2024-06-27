@@ -2,10 +2,10 @@
 
 ### Fixed
 
+Run through torch call graph generation
+
 - class method handling
 - get rid of out of scope function
-
-
-TBD:
-
 - Nesting function handling
+- Disable lambda function mechanisms
+

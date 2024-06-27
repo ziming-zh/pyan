@@ -87,7 +87,8 @@ class CallGraphVisitor(ast.NodeVisitor):
                 print("Popping from name_stack")  # Replace this with actual logging
                 # if len(self) == 1:
                 print(self)
-                # import pdb; pdb.set_trace()
+                # if self == ['..fx.experimental.proxy_tensor','get_proxy_slot']:
+                #     import pdb; pdb.set_trace()
                 
                 return super().pop(*args, **kwargs)
 
@@ -395,8 +396,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.class_stack.append(to_node)
         self.name_stack.append(node.name)
         inner_ns = self.get_node_of_current_namespace().get_name()
-        if inner_ns == 'ao.pruning._experimental.data_scheduler.base_data_scheduler.BaseDataScheduler._enable_get_sp_call':
-            import pdb; pdb.set_trace()
+        # if inner_ns == 'ao.pruning._experimental.data_scheduler.base_data_scheduler.BaseDataScheduler._enable_get_sp_call':
+        #     import pdb; pdb.set_trace()
         self.scope_stack.append(self.scopes[inner_ns])
         self.context_stack.append("ClassDef %s" % (node.name))
 
@@ -450,10 +451,37 @@ class CallGraphVisitor(ast.NodeVisitor):
         #
         self.name_stack.append(node.name)
         inner_ns = self.get_node_of_current_namespace().get_name()
-        if inner_ns == 'distributed._spmd.iter_graph_module.IterGraph.node_add_user':
-            import pdb; pdb.set_trace()
-        if inner_ns == 'distributed._spmd.partial_lower._node_predicate':
-            import pdb; pdb.set_trace()
+        # if inner_ns == 'distributed._spmd.iter_graph_module.IterGraph.node_add_user':
+        #     import pdb; pdb.set_trace()
+        # if inner_ns == 'distributed._spmd.partial_lower._node_predicate':
+        #     import pdb; pdb.set_trace()
+        if  not inner_ns in self.scopes:
+            self.name_stack.pop()
+            # could be a nested function
+            # do matching with name in self.scopes
+            # split inner_ns with the last dot
+            split_inner_ns = inner_ns.rsplit('.', 1)
+            # check if there is a match that starts with the first part of the split and ends with the second part
+            for key in self.scopes.keys():
+                if key.startswith(split_inner_ns[0]) and key.endswith(split_inner_ns[1]):
+                    inner_ns = key
+                    # missing_ns is the namespace that is missing
+                    missing_ns = inner_ns.replace(split_inner_ns[0], '').replace(split_inner_ns[1], '')
+                    split_missing_ns = missing_ns.split('.')
+                    # append the missing namespace to the second last position of the name_stack
+                    for missing in split_missing_ns:
+                        if missing != '':
+                            self.name_stack.append(missing)
+                            temp_ns = self.get_node_of_current_namespace().get_name()
+                            self.scope_stack.append(self.scopes[temp_ns])
+                            self.context_stack.append("FunctionDef %s" % (missing))
+                        
+                    # import pdb; pdb.set_trace()
+                    break
+            # the indent is required here
+            self.name_stack.append(node.name)
+        # if inner_ns == '..onnx._internal.fx.passes.modularization._ModuleStackMeta.top':
+        #     import pdb; pdb.set_trace()
         self.scope_stack.append(self.scopes[inner_ns])
         self.context_stack.append("FunctionDef %s" % (node.name))
 
@@ -487,19 +515,20 @@ class CallGraphVisitor(ast.NodeVisitor):
         #
         self.context_stack.pop()
         self.scope_stack.pop()
+        assert self.name_stack[-1] == node.name, "Name stack mismatch, expected %s, got %s" % (node.name, self.name_stack[-1])
         self.name_stack.pop()
 
     def visit_AsyncFunctionDef(self, node):
         self.visit_FunctionDef(node)  # TODO: alias for now; tag async functions in output in a future version?
 
-    def visit_Lambda(self, node):
-        # TODO: avoid lumping together all lambdas in the same namespace.
-        self.logger.debug("Lambda, %s:%s" % (self.filename, node.lineno))
-        with ExecuteInInnerScope(self, "lambda"):
-            inner_ns = self.get_node_of_current_namespace().get_name()
-            self.generate_args_nodes(node.args, inner_ns)
-            self.analyze_arguments(node.args)
-            self.visit(node.body)  # single expr
+    # def visit_Lambda(self, node):
+    #     # TODO: avoid lumping together all lambdas in the same namespace.
+    #     self.logger.debug("Lambda, %s:%s" % (self.filename, node.lineno))
+    #     with ExecuteInInnerScope(self, "lambda"):
+    #         inner_ns = self.get_node_of_current_namespace().get_name()
+    #         self.generate_args_nodes(node.args, inner_ns)
+    #         self.analyze_arguments(node.args)
+    #         self.visit(node.body)  # single expr
 
     def generate_args_nodes(self, ast_args, inner_ns):
         """Capture which names correspond to function args.
@@ -512,6 +541,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         ast_args: node.args from a FunctionDef or Lambda
         inner_ns: namespace of the function or lambda, for scope lookup
         """
+        # if inner_ns ==  '..fx.experimental.proxy_tensor.get_proxy_slot.lambda':
+        #     import pdb; pdb.set_trace()
         sc = self.scopes[inner_ns]
         # As the name of the nonsense node, we can use any string that
         # is not a valid Python identifier.
@@ -1032,7 +1063,11 @@ class CallGraphVisitor(ast.NodeVisitor):
             self.last_value = None
 
         # Analyze flavor
-        in_class_ns = self.context_stack[-1].startswith("ClassDef")
+        if len(self.context_stack)==0:
+            import pdb; pdb.set_trace()
+            in_class_ns = False
+        else:
+            in_class_ns = self.context_stack[-1].startswith("ClassDef")
         if not in_class_ns:
             flavor = Flavor.FUNCTION
         else:
@@ -1324,7 +1359,6 @@ class CallGraphVisitor(ast.NodeVisitor):
         namespace = ".".join(self.name_stack[0:-1])
         name = self.name_stack[-1]
         if hasattr(self, "class_stack") and len(self.class_stack):
-            # import pdb; pdb.set_trace()
             class_namespace = self.class_stack[-1].namespace #+ "." + self.class_stack[-1].name
             # return self.get_node(namespace, name, None, flavor=Flavor.CLASS)
             # assert namespace and class_namespace begins with the same prefix
@@ -1332,7 +1366,9 @@ class CallGraphVisitor(ast.NodeVisitor):
                 if self.class_stack[-1].name != name: # representing a class method here
                     class_namespace = class_namespace + "." + self.class_stack[-1].name
                     self.name_stack.append(self.class_stack[-1].name)
-                    import pdb; pdb.set_trace()
+                    self.scope_stack.append(self.scopes[class_namespace])
+                    self.context_stack.append("ClassDef %s" % (self.class_stack[-1].name))
+                    # import pdb; pdb.set_trace()
                 return self.get_node(class_namespace, name, None, flavor=Flavor.CLASS)
             elif namespace.startswith(class_namespace):
                 return self.get_node(namespace, name, None, flavor=Flavor.NAMESPACE)
