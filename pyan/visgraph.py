@@ -160,7 +160,10 @@ class VisualGraph(object):
             for node in visitor.nodes[name]:
                 if node.defined:
                     visited_nodes.append(node)
-        visited_nodes.sort(key=lambda x: (x.namespace, x.name))
+        # import pdb; pdb.set_trace()
+        # visited_nodes.sort(key=lambda x: (x.namespace, x.name))
+        visited_nodes = [node for node in visited_nodes if node.namespace is not None]
+        visited_nodes.sort(key=lambda x: (x.namespace if x.namespace else '', x.name if x.name else ''))
 
         def find_filenames():
             filenames = set()
@@ -246,6 +249,10 @@ class VisualGraph(object):
                 if n.defined:
                     for n2 in visitor.uses_edges[n]:
                         if n2.defined:
+                            if n not in nodes_dict or n2 not in nodes_dict:
+                                # TODO: ad hoc fix
+                                continue
+                                # import pdb; pdb.set_trace()
                             root_graph.edges.append(VisualEdge(nodes_dict[n], nodes_dict[n2], "uses", color))
 
         return root_graph

@@ -84,9 +84,9 @@ class CallGraphVisitor(ast.NodeVisitor):
         class CustomList(list):
             def pop(self, *args, **kwargs):
                 # Log before popping
-                print("Popping from name_stack")  # Replace this with actual logging
+                # self.logger.info("Popping from name_stack")  # Replace this with actual logging
                 # if len(self) == 1:
-                print(self)
+                # self.logger.info(self)
                 # if self == ['..fx.experimental.proxy_tensor','get_proxy_slot']:
                 #     import pdb; pdb.set_trace()
                 
@@ -173,8 +173,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         # attributes and imports, we do it the other way around: we only expand
         # those references that could not be resolved to any known name, and
         # then remove any references pointing outside the analyzed file set.
-
-        self.expand_unknowns()
+        # import pdb; pdb.set_trace()
+        # self.expand_unknowns()
         self.resolve_imports()
         self.contract_nonexistents()
         self.cull_inherited()
@@ -194,6 +194,11 @@ class CallGraphVisitor(ast.NodeVisitor):
         """
         # first find all imports and map to themselves. we will then remap those that are currently pointing
         # to duplicates or into the void
+        # for items in self.nodes.values():
+        #     for n in items:
+        #         if n.flavor == Flavor.IMPORTEDITEM and (n.namespace == '..module' or n.namespace == '..modules'):
+                    # self.logger.info(n.namespace)
+                    # import pdb; pdb.set_trace()
         imports_to_resolve = {n for items in self.nodes.values() for n in items if n.flavor == Flavor.IMPORTEDITEM}
         # map real definitions
         import_mapping = {}
@@ -216,6 +221,8 @@ class CallGraphVisitor(ast.NodeVisitor):
                 for candidate_to_node in module_uses:
                     if candidate_to_node.name == from_node.name:
                         to_node = candidate_to_node
+                        if (to_node.namespace == '..module'):
+                            continue
                         import_mapping[from_node] = to_node
                         if to_node.flavor == Flavor.IMPORTEDITEM and from_node is not to_node:  # avoid self-recursion
                             imports_to_resolve.add(to_node)
@@ -364,7 +371,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         if self.name_stack and self.name_stack[-1] == ns:
             self.name_stack.pop()
             if len(self.name_stack) == 0:
-                print("name stack is empty")
+                self.logger.info("name stack is empty")
         self.last_value = None
 
         if self.add_defines_edge(module_node, None):
