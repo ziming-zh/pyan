@@ -107,6 +107,7 @@ class CallGraphVisitor(ast.NodeVisitor):
                 self.process_one(filename)
             if pas == 0:
                 self.resolve_base_classes()  # must be done only after all files seen
+        # import pdb; pdb.set_trace()
         self.postprocess()
 
     def process_one(self, filename):
@@ -231,6 +232,34 @@ class CallGraphVisitor(ast.NodeVisitor):
         # set previously undefined nodes to defined
         # go through undefined attributes
         attribute_import_mapping = {}
+
+        # # Dump all edges in the self.defines_edges
+        # import json
+        # class NodeEncoder(json.JSONEncoder):
+        #     def default(self, obj):
+        #         if isinstance(obj, Node):
+        #             return {'namespace': obj.namespace, 'name': obj.name, 'ast_node': obj.ast_node.__dict__, 'filename': obj.filename, 'flavor': obj.flavor, 'defined': obj.defined}
+        #         return super().default(obj)
+
+        # serializable_dict = {}
+        # for key_node, value_nodes in self.defines_edges.items():
+        #     # Convert the key node using NodeEncoder logic
+        #     try: 
+        #         key_repr = {'namespace': key_node.namespace, 'name': key_node.name, 'ast_node': str(key_node.ast_node.__dict__) if key_node.ast_node != None else '', 'filename': key_node.filename, 'defined': key_node.defined}
+        #     except:
+        #         import pdb; pdb.set_trace()
+        #     # Convert the set of nodes into a list for serialization
+        #     value_repr = [{'namespace': node.namespace, 'name': node.name, 'ast_node': str(key_node.ast_node.__dict__) if key_node.ast_node != None else '', 'filename': node.filename, 'defined': node.defined} for node in value_nodes]
+        #     # Use a string representation of the key node as the key in the serializable dictionary
+        #     # import pdb; pdb.set_trace()
+        #     serializable_dict[json.dumps(key_repr)] = value_repr
+
+        # # Convert the dictionary to a JSON string
+        # json_str = json.dumps(serializable_dict, cls=NodeEncoder, indent=4)
+
+        # with open('/defines_edges_dump.json', 'w') as file:
+        #     file.write(json_str)
+
         for nodes in self.nodes.values():
             for node in nodes:
                 if not node.defined and node.flavor == Flavor.ATTRIBUTE:
@@ -241,6 +270,21 @@ class CallGraphVisitor(ast.NodeVisitor):
                             and from_node.flavor == Flavor.IMPORTEDITEM
                         ):
                             # use define edges as potential candidates
+                            if to_node.namespace in ['..nn.module', 'torch.ao.quantization.utils']:
+                                continue
+                            if to_node.namespace == 'torch' and to_node.name == '_C':
+                                continue
+                            if to_node.namespace == '..export.graph_signature' and to_node.name == 'InputKind':
+                                continue
+                            if to_node.namespace == '..export.graph_signature' and to_node.name == 'OutputKind':
+                                continue
+                            if to_node.namespace == '..ao.quantization' and to_node.name == 'BackendConfig':
+                                continue
+                            if to_node.namespace == 'torch.distributed._shard.sharded_tensor' and to_node.name == 'ShardedTensor':
+                                continue
+                            if to_node not in self.defines_edges:
+                                # import pdb; pdb.set_trace()
+                                continue
                             for candidate_to_node in self.defines_edges[to_node]:  #
                                 if candidate_to_node.name == node.name:
                                     attribute_import_mapping[node] = candidate_to_node
@@ -1071,7 +1115,7 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         # Analyze flavor
         if len(self.context_stack)==0:
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             in_class_ns = False
         else:
             in_class_ns = self.context_stack[-1].startswith("ClassDef")
@@ -1359,8 +1403,8 @@ class CallGraphVisitor(ast.NodeVisitor):
           - n.name      = name of this namespace
           - no associated AST node.
         """
-        if not len(self.name_stack):
-            import pdb; pdb.set_trace()
+        # if not len(self.name_stack):
+            # import pdb; pdb.set_trace()
         assert len(self.name_stack)  # name_stack should never be empty (always at least module name)
 
         namespace = ".".join(self.name_stack[0:-1])
