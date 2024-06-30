@@ -1896,51 +1896,75 @@ class CallGraphVisitor(ast.NodeVisitor):
                             self.add_uses_edge(pn, n2)
                     n.defined = False
 
-    def initialize_node_levels(self):
-        self.whitelist = [Flavor.METHOD, Flavor.CLASS, Flavor.CLASSMETHOD, Flavor.STATICMETHOD, Flavor.FUNCTION, Flavor.UNSPECIFIED, Flavor.UNKNOWN]
-        # import pdb; pdb.set_trace()
-        self.node_levels = {node: float('inf') for _, node_list in self.nodes.items() for node in node_list if node.flavor in self.whitelist}
-
     def find_top_level_nodes(self):
-        for _, node_list in self.nodes.items():
-            for node in node_list:
-                if node.flavor not in self.whitelist:
-                    continue
-                is_top_level = True
-                for _, to_nodes in self.uses_edges.items():
-                    if node in to_nodes:
-                        is_top_level = False
-                        break
-                if is_top_level:
-                    for _, to_nodes in self.defines_edges.items():
-                        if node in to_nodes:
-                            is_top_level = False
-                            break
-                    self.node_levels[node] = 0
-                    self.recursively_update_levels(node, 0)
+        self.all_nodes = {item for sublist in self.nodes.values() for item in sublist}
+        top_level_nodes = self.all_nodes.copy()
+        for _, to_nodes in self.uses_edges.items():
+            top_level_nodes -= set(to_nodes)
+        for _, to_nodes in self.defines_edges.items():
+            top_level_nodes -= set(to_nodes)
+        return top_level_nodes
 
-    def recursively_update_levels(self, node, current_level):
-        for child_node in self.defines_edges.get(node, []):
-            if child_node.name == '__init__' and child_node.namespace == 'torch.nn.modules.module.Module':
-                import pdb; pdb.set_trace()
-            if child_node.flavor in self.whitelist and self.node_levels[child_node] > current_level + 1:
-                self.node_levels[child_node] = current_level + 1
-                self.recursively_update_levels(child_node, current_level + 1)
+    def build_graph(self):
+        from collections import defaultdict
+        graph = defaultdict(list)
+        for from_node, to_nodes in self.uses_edges.items():
+            for to_node in to_nodes:
+                graph[to_node].append(from_node)
+        for from_node, to_nodes in self.defines_edges.items():
+            for to_node in to_nodes:
+                graph[to_node].append(from_node)
+        return graph
+
+    def find_paths_to_top_level(self, start_node, graph, top_level_nodes):
+        from collections import defaultdict
+        all_paths = defaultdict(list)
+        visited_nodes = set()
+
+        def dfs(node, path):
+            # if node.name == 'factory_kwargs':
+            #     import pdb; pdb.set_trace()
+            if node in visited_nodes:
+                return
+            if node in top_level_nodes:
+                # for p_node in path + [node]:
+                #     if p_node not in all_paths:
+                #         all_paths[p_node] = []
+                all_paths[node].append(path + [node])
+                return
+            visited_nodes.add(node)
+            for next_node in graph[node]:
+                if len(path) > 5:
+                    break
+                dfs(next_node, path + [node])
+            visited_nodes.remove(node)
+
+        dfs(start_node, [])
+        return all_paths
+
+    def analyze(self):
+        top_level_nodes = self.find_top_level_nodes()
+        graph = self.build_graph()
+        all_paths = {}
+        for node in self.all_nodes:
+            if node not in top_level_nodes:
+                all_paths[node] = self.find_paths_to_top_level(node, graph, top_level_nodes)
+        return all_paths
 
     def assign_levels(self):
-        self.initialize_node_levels()
-        self.find_top_level_nodes()
+        all_paths = self.analyze()
 
         with open('assign_level.log', 'w') as f:
-            f.write(f'Total {len(self.node_levels)} number of nodes\n')
-            for node, level in self.node_levels.items():
-                f.write(f'{node} - {level}\n')
+            f.write(f'Total {len(all_paths)} number of nodes\n')
+            for node, paths in all_paths.items():
+                f.write(f'{node} - {paths}\n')
+                break
 
-            f.write(f'Define Edges\n')
-            for from_node, to_node in self.defines_edges.items():
-                # import pdb; pdb.set_trace()
-                f.write(f'{from_node} level {self.node_levels[from_node] if from_node in self.node_levels else -1} --- {to_node}\n')
+        # with open('debug_uses_edges.log', 'w') as f:
+            # f.write(f'Define Edges\n')
+            # for from_node, to_node in self.defines_edges.items():
+            #     f.write(f'{from_node} --- {to_node}\n')
 
-            f.write(f'Uses Edges\n')
-            for from_node, to_node in self.uses_edges.items():
-                f.write(f'{from_node} level {self.node_levels[from_node] if from_node in self.node_levels else -1} --- {to_node}\n')
+            # f.write(f'Uses Edges\n')
+            # for from_node, to_node in self.uses_edges.items():
+            #     f.write(f'{from_node} --- {to_node}\n')
