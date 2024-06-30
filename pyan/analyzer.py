@@ -180,6 +180,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         self.contract_nonexistents()
         self.cull_inherited()
         self.collapse_inner()
+        self.assign_levels()
 
     ###########################################################################
     # visitor methods
@@ -1894,3 +1895,52 @@ class CallGraphVisitor(ast.NodeVisitor):
                             self.logger.info("Collapsing inner from %s to %s, uses %s" % (n, pn, n2))
                             self.add_uses_edge(pn, n2)
                     n.defined = False
+
+    def initialize_node_levels(self):
+        self.whitelist = [Flavor.METHOD, Flavor.CLASS, Flavor.CLASSMETHOD, Flavor.STATICMETHOD, Flavor.FUNCTION, Flavor.UNSPECIFIED, Flavor.UNKNOWN]
+        # import pdb; pdb.set_trace()
+        self.node_levels = {node: float('inf') for _, node_list in self.nodes.items() for node in node_list if node.flavor in self.whitelist}
+
+    def find_top_level_nodes(self):
+        for _, node_list in self.nodes.items():
+            for node in node_list:
+                if node.flavor not in self.whitelist:
+                    continue
+                is_top_level = True
+                for _, to_nodes in self.uses_edges.items():
+                    if node in to_nodes:
+                        is_top_level = False
+                        break
+                if is_top_level:
+                    for _, to_nodes in self.defines_edges.items():
+                        if node in to_nodes:
+                            is_top_level = False
+                            break
+                    self.node_levels[node] = 0
+                    self.recursively_update_levels(node, 0)
+
+    def recursively_update_levels(self, node, current_level):
+        for child_node in self.defines_edges.get(node, []):
+            if child_node.name == '__init__' and child_node.namespace == 'torch.nn.modules.module.Module':
+                import pdb; pdb.set_trace()
+            if child_node.flavor in self.whitelist and self.node_levels[child_node] > current_level + 1:
+                self.node_levels[child_node] = current_level + 1
+                self.recursively_update_levels(child_node, current_level + 1)
+
+    def assign_levels(self):
+        self.initialize_node_levels()
+        self.find_top_level_nodes()
+
+        with open('assign_level.log', 'w') as f:
+            f.write(f'Total {len(self.node_levels)} number of nodes\n')
+            for node, level in self.node_levels.items():
+                f.write(f'{node} - {level}\n')
+
+            f.write(f'Define Edges\n')
+            for from_node, to_node in self.defines_edges.items():
+                # import pdb; pdb.set_trace()
+                f.write(f'{from_node} level {self.node_levels[from_node] if from_node in self.node_levels else -1} --- {to_node}\n')
+
+            f.write(f'Uses Edges\n')
+            for from_node, to_node in self.uses_edges.items():
+                f.write(f'{from_node} level {self.node_levels[from_node] if from_node in self.node_levels else -1} --- {to_node}\n')
