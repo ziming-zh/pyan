@@ -1897,12 +1897,15 @@ class CallGraphVisitor(ast.NodeVisitor):
                     n.defined = False
 
     def find_top_level_nodes(self):
-        self.all_nodes = {item for sublist in self.nodes.values() for item in sublist}
+        self.filter_flavor = [Flavor.FUNCTION]
+        self.all_nodes = {item for sublist in self.nodes.values() for item in sublist if item.flavor in self.filter_flavor}
         top_level_nodes = self.all_nodes.copy()
-        for _, to_nodes in self.uses_edges.items():
-            top_level_nodes -= set(to_nodes)
-        for _, to_nodes in self.defines_edges.items():
-            top_level_nodes -= set(to_nodes)
+        for from_nodes, to_nodes in self.uses_edges.items():
+            if from_nodes.flavor in self.filter_flavor:
+                top_level_nodes -= set(to_nodes)
+        for from_nodes, to_nodes in self.defines_edges.items():
+            if from_nodes.flavor in self.filter_flavor:
+                top_level_nodes -= set(to_nodes)
         return top_level_nodes
 
     def build_graph(self):
@@ -1910,10 +1913,12 @@ class CallGraphVisitor(ast.NodeVisitor):
         graph = defaultdict(list)
         for from_node, to_nodes in self.uses_edges.items():
             for to_node in to_nodes:
-                graph[to_node].append(from_node)
+                if to_node.flavor in self.filter_flavor and from_node.flavor in self.filter_flavor:
+                    graph[to_node].append(from_node)
         for from_node, to_nodes in self.defines_edges.items():
             for to_node in to_nodes:
-                graph[to_node].append(from_node)
+                if to_node.flavor in self.filter_flavor and from_node.flavor in self.filter_flavor:
+                    graph[to_node].append(from_node)
         return graph
 
     def find_paths_to_top_level(self, start_node, graph, top_level_nodes):
@@ -1965,7 +1970,6 @@ class CallGraphVisitor(ast.NodeVisitor):
             f.write(f'Total {len(all_paths)} number of nodes\n')
             for node, paths in all_paths.items():
                 f.write(f'{node} - {paths}\n')
-                break
 
             for node, level in self.level.items():
                 f.write(f'{node} - {level}\n')
