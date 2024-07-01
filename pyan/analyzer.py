@@ -1902,9 +1902,11 @@ class CallGraphVisitor(ast.NodeVisitor):
         top_level_nodes = self.all_nodes.copy()
         for from_nodes, to_nodes in self.uses_edges.items():
             if from_nodes.flavor in self.filter_flavor:
+                to_nodes = {item for item in to_nodes if item.flavor in self.filter_flavor if item != from_nodes}
                 top_level_nodes -= set(to_nodes)
         for from_nodes, to_nodes in self.defines_edges.items():
             if from_nodes.flavor in self.filter_flavor:
+                to_nodes = {item for item in to_nodes if item.flavor in self.filter_flavor if item != from_nodes}
                 top_level_nodes -= set(to_nodes)
         return top_level_nodes
 
@@ -1935,8 +1937,6 @@ class CallGraphVisitor(ast.NodeVisitor):
                 return
             visited_nodes.add(node)
             for next_node in graph[node]:
-                if len(path) > 5:
-                    break
                 dfs(next_node, path + [node])
             visited_nodes.remove(node)
 
