@@ -1922,15 +1922,11 @@ class CallGraphVisitor(ast.NodeVisitor):
         visited_nodes = set()
 
         def dfs(node, path):
-            # if node.name == 'factory_kwargs':
-            #     import pdb; pdb.set_trace()
             if node in visited_nodes:
                 return
             if node in top_level_nodes:
-                # for p_node in path + [node]:
-                #     if p_node not in all_paths:
-                #         all_paths[p_node] = []
-                all_paths[node].append(path + [node])
+                if path + [node] not in all_paths[node]:
+                    all_paths[node].append(path + [node])
                 return
             visited_nodes.add(node)
             for next_node in graph[node]:
@@ -1947,18 +1943,32 @@ class CallGraphVisitor(ast.NodeVisitor):
         graph = self.build_graph()
         all_paths = {}
         for node in self.all_nodes:
-            if node not in top_level_nodes:
-                all_paths[node] = self.find_paths_to_top_level(node, graph, top_level_nodes)
+            all_paths[node] = self.find_paths_to_top_level(node, graph, top_level_nodes)
         return all_paths
+
+    def eval_level(self, all_paths):
+        self.level = {}
+        for node, paths in all_paths.items():
+            level = float('inf')
+            # import pdb; pdb.set_trace()
+            for _, path_list in paths.items():
+                for path in path_list:
+                    level = min(level, len(path))
+            self.level[node] = level
 
     def assign_levels(self):
         all_paths = self.analyze()
+
+        self.eval_level(all_paths)
 
         with open('assign_level.log', 'w') as f:
             f.write(f'Total {len(all_paths)} number of nodes\n')
             for node, paths in all_paths.items():
                 f.write(f'{node} - {paths}\n')
                 break
+
+            for node, level in self.level.items():
+                f.write(f'{node} - {level}\n')
 
         # with open('debug_uses_edges.log', 'w') as f:
             # f.write(f'Define Edges\n')
