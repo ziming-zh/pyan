@@ -107,7 +107,6 @@ class CallGraphVisitor(ast.NodeVisitor):
                 self.process_one(filename)
             if pas == 0:
                 self.resolve_base_classes()  # must be done only after all files seen
-        # import pdb; pdb.set_trace()
         self.postprocess()
 
     def process_one(self, filename):
@@ -1067,6 +1066,9 @@ class CallGraphVisitor(ast.NodeVisitor):
             # XXX: we currently visit expr twice (again in analyze_binding()) if vars is not None
             self.last_value = None
             self.visit(expr)
+            if self.last_value.get_name()[0] == '*':
+                # import pdb; pdb.set_trace()
+                self.last_value.namespace = self.name_stack[0]
             add_uses_enter_exit_of(self.last_value)
             self.last_value = None
 
@@ -1593,7 +1595,8 @@ class CallGraphVisitor(ast.NodeVisitor):
         constructor directly.
         !!!
         """
-
+        # if name == '__exit__':
+            # import pdb; pdb.set_trace() 
         if name in self.nodes:
             for n in self.nodes[name]:
                 if n.namespace == namespace:
@@ -1897,7 +1900,7 @@ class CallGraphVisitor(ast.NodeVisitor):
                     n.defined = False
 
     def find_top_level_nodes(self):
-        self.filter_flavor = [Flavor.FUNCTION]
+        self.filter_flavor = [Flavor.FUNCTION, Flavor.CLASS, Flavor.METHOD]
         self.all_nodes = {item for sublist in self.nodes.values() for item in sublist if item.flavor in self.filter_flavor}
         top_level_nodes = self.all_nodes.copy()
         for from_nodes, to_nodes in self.uses_edges.items():
@@ -1968,8 +1971,8 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         with open('assign_level.log', 'w') as f:
             f.write(f'Total {len(all_paths)} number of nodes\n')
-            for node, paths in all_paths.items():
-                f.write(f'{node} - {paths}\n')
+            # for node, paths in all_paths.items():
+            #     f.write(f'{node} - {paths}\n')
 
             for node, level in self.level.items():
                 f.write(f'{node} - {level}\n')
