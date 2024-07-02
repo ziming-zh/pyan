@@ -84,9 +84,9 @@ class CallGraphVisitor(ast.NodeVisitor):
         class CustomList(list):
             def pop(self, *args, **kwargs):
                 # Log before popping
-                print("Popping from name_stack")  # Replace this with actual logging
+                # self.logger.info("Popping from name_stack")  # Replace this with actual logging
                 # if len(self) == 1:
-                print(self)
+                # self.logger.info(self)
                 # if self == ['..fx.experimental.proxy_tensor','get_proxy_slot']:
                 #     import pdb; pdb.set_trace()
                 
@@ -107,6 +107,7 @@ class CallGraphVisitor(ast.NodeVisitor):
                 self.process_one(filename)
             if pas == 0:
                 self.resolve_base_classes()  # must be done only after all files seen
+        # import pdb; pdb.set_trace()
         self.postprocess()
 
     def process_one(self, filename):
@@ -173,12 +174,13 @@ class CallGraphVisitor(ast.NodeVisitor):
         # attributes and imports, we do it the other way around: we only expand
         # those references that could not be resolved to any known name, and
         # then remove any references pointing outside the analyzed file set.
-
-        self.expand_unknowns()
+        # import pdb; pdb.set_trace()
+        # self.expand_unknowns()
         self.resolve_imports()
         self.contract_nonexistents()
         self.cull_inherited()
         self.collapse_inner()
+        self.assign_levels()
 
     ###########################################################################
     # visitor methods
@@ -194,6 +196,11 @@ class CallGraphVisitor(ast.NodeVisitor):
         """
         # first find all imports and map to themselves. we will then remap those that are currently pointing
         # to duplicates or into the void
+        # for items in self.nodes.values():
+        #     for n in items:
+        #         if n.flavor == Flavor.IMPORTEDITEM and (n.namespace == '..module' or n.namespace == '..modules'):
+                    # self.logger.info(n.namespace)
+                    # import pdb; pdb.set_trace()
         imports_to_resolve = {n for items in self.nodes.values() for n in items if n.flavor == Flavor.IMPORTEDITEM}
         # map real definitions
         import_mapping = {}
@@ -216,6 +223,8 @@ class CallGraphVisitor(ast.NodeVisitor):
                 for candidate_to_node in module_uses:
                     if candidate_to_node.name == from_node.name:
                         to_node = candidate_to_node
+                        if (to_node.namespace == '..module'):
+                            continue
                         import_mapping[from_node] = to_node
                         if to_node.flavor == Flavor.IMPORTEDITEM and from_node is not to_node:  # avoid self-recursion
                             imports_to_resolve.add(to_node)
@@ -224,6 +233,34 @@ class CallGraphVisitor(ast.NodeVisitor):
         # set previously undefined nodes to defined
         # go through undefined attributes
         attribute_import_mapping = {}
+
+        # # Dump all edges in the self.defines_edges
+        # import json
+        # class NodeEncoder(json.JSONEncoder):
+        #     def default(self, obj):
+        #         if isinstance(obj, Node):
+        #             return {'namespace': obj.namespace, 'name': obj.name, 'ast_node': obj.ast_node.__dict__, 'filename': obj.filename, 'flavor': obj.flavor, 'defined': obj.defined}
+        #         return super().default(obj)
+
+        # serializable_dict = {}
+        # for key_node, value_nodes in self.defines_edges.items():
+        #     # Convert the key node using NodeEncoder logic
+        #     try: 
+        #         key_repr = {'namespace': key_node.namespace, 'name': key_node.name, 'ast_node': str(key_node.ast_node.__dict__) if key_node.ast_node != None else '', 'filename': key_node.filename, 'defined': key_node.defined}
+        #     except:
+        #         import pdb; pdb.set_trace()
+        #     # Convert the set of nodes into a list for serialization
+        #     value_repr = [{'namespace': node.namespace, 'name': node.name, 'ast_node': str(key_node.ast_node.__dict__) if key_node.ast_node != None else '', 'filename': node.filename, 'defined': node.defined} for node in value_nodes]
+        #     # Use a string representation of the key node as the key in the serializable dictionary
+        #     # import pdb; pdb.set_trace()
+        #     serializable_dict[json.dumps(key_repr)] = value_repr
+
+        # # Convert the dictionary to a JSON string
+        # json_str = json.dumps(serializable_dict, cls=NodeEncoder, indent=4)
+
+        # with open('/defines_edges_dump.json', 'w') as file:
+        #     file.write(json_str)
+
         for nodes in self.nodes.values():
             for node in nodes:
                 if not node.defined and node.flavor == Flavor.ATTRIBUTE:
@@ -234,6 +271,21 @@ class CallGraphVisitor(ast.NodeVisitor):
                             and from_node.flavor == Flavor.IMPORTEDITEM
                         ):
                             # use define edges as potential candidates
+                            if to_node.namespace in ['..nn.module', 'torch.ao.quantization.utils']:
+                                continue
+                            if to_node.namespace == 'torch' and to_node.name == '_C':
+                                continue
+                            if to_node.namespace == '..export.graph_signature' and to_node.name == 'InputKind':
+                                continue
+                            if to_node.namespace == '..export.graph_signature' and to_node.name == 'OutputKind':
+                                continue
+                            if to_node.namespace == '..ao.quantization' and to_node.name == 'BackendConfig':
+                                continue
+                            if to_node.namespace == 'torch.distributed._shard.sharded_tensor' and to_node.name == 'ShardedTensor':
+                                continue
+                            if to_node not in self.defines_edges:
+                                # import pdb; pdb.set_trace()
+                                continue
                             for candidate_to_node in self.defines_edges[to_node]:  #
                                 if candidate_to_node.name == node.name:
                                     attribute_import_mapping[node] = candidate_to_node
@@ -364,7 +416,7 @@ class CallGraphVisitor(ast.NodeVisitor):
         if self.name_stack and self.name_stack[-1] == ns:
             self.name_stack.pop()
             if len(self.name_stack) == 0:
-                print("name stack is empty")
+                self.logger.info("name stack is empty")
         self.last_value = None
 
         if self.add_defines_edge(module_node, None):
@@ -1064,7 +1116,7 @@ class CallGraphVisitor(ast.NodeVisitor):
 
         # Analyze flavor
         if len(self.context_stack)==0:
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             in_class_ns = False
         else:
             in_class_ns = self.context_stack[-1].startswith("ClassDef")
@@ -1352,8 +1404,8 @@ class CallGraphVisitor(ast.NodeVisitor):
           - n.name      = name of this namespace
           - no associated AST node.
         """
-        if not len(self.name_stack):
-            import pdb; pdb.set_trace()
+        # if not len(self.name_stack):
+            # import pdb; pdb.set_trace()
         assert len(self.name_stack)  # name_stack should never be empty (always at least module name)
 
         namespace = ".".join(self.name_stack[0:-1])
@@ -1843,3 +1895,90 @@ class CallGraphVisitor(ast.NodeVisitor):
                             self.logger.info("Collapsing inner from %s to %s, uses %s" % (n, pn, n2))
                             self.add_uses_edge(pn, n2)
                     n.defined = False
+
+    def find_top_level_nodes(self):
+        self.filter_flavor = [Flavor.FUNCTION]
+        self.all_nodes = {item for sublist in self.nodes.values() for item in sublist if item.flavor in self.filter_flavor}
+        top_level_nodes = self.all_nodes.copy()
+        for from_nodes, to_nodes in self.uses_edges.items():
+            if from_nodes.flavor in self.filter_flavor:
+                to_nodes = {item for item in to_nodes if item.flavor in self.filter_flavor if item != from_nodes}
+                top_level_nodes -= set(to_nodes)
+        for from_nodes, to_nodes in self.defines_edges.items():
+            if from_nodes.flavor in self.filter_flavor:
+                to_nodes = {item for item in to_nodes if item.flavor in self.filter_flavor if item != from_nodes}
+                top_level_nodes -= set(to_nodes)
+        return top_level_nodes
+
+    def build_graph(self):
+        from collections import defaultdict
+        graph = defaultdict(list)
+        for from_node, to_nodes in self.uses_edges.items():
+            for to_node in to_nodes:
+                if to_node.flavor in self.filter_flavor and from_node.flavor in self.filter_flavor:
+                    graph[to_node].append(from_node)
+        for from_node, to_nodes in self.defines_edges.items():
+            for to_node in to_nodes:
+                if to_node.flavor in self.filter_flavor and from_node.flavor in self.filter_flavor:
+                    graph[to_node].append(from_node)
+        return graph
+
+    def find_paths_to_top_level(self, start_node, graph, top_level_nodes):
+        from collections import defaultdict
+        all_paths = defaultdict(list)
+        visited_nodes = set()
+
+        def dfs(node, path):
+            if node in visited_nodes:
+                return
+            if node in top_level_nodes:
+                if path + [node] not in all_paths[node]:
+                    all_paths[node].append(path + [node])
+                return
+            visited_nodes.add(node)
+            for next_node in graph[node]:
+                dfs(next_node, path + [node])
+            visited_nodes.remove(node)
+
+        dfs(start_node, [])
+        return all_paths
+
+    def analyze(self):
+        top_level_nodes = self.find_top_level_nodes()
+        graph = self.build_graph()
+        all_paths = {}
+        for node in self.all_nodes:
+            all_paths[node] = self.find_paths_to_top_level(node, graph, top_level_nodes)
+        return all_paths
+
+    def eval_level(self, all_paths):
+        self.level = {}
+        for node, paths in all_paths.items():
+            level = float('inf')
+            # import pdb; pdb.set_trace()
+            for _, path_list in paths.items():
+                for path in path_list:
+                    level = min(level, len(path))
+            self.level[node] = level
+
+    def assign_levels(self):
+        all_paths = self.analyze()
+
+        self.eval_level(all_paths)
+
+        with open('assign_level.log', 'w') as f:
+            f.write(f'Total {len(all_paths)} number of nodes\n')
+            for node, paths in all_paths.items():
+                f.write(f'{node} - {paths}\n')
+
+            for node, level in self.level.items():
+                f.write(f'{node} - {level}\n')
+
+        # with open('debug_uses_edges.log', 'w') as f:
+            # f.write(f'Define Edges\n')
+            # for from_node, to_node in self.defines_edges.items():
+            #     f.write(f'{from_node} --- {to_node}\n')
+
+            # f.write(f'Uses Edges\n')
+            # for from_node, to_node in self.uses_edges.items():
+            #     f.write(f'{from_node} --- {to_node}\n')
